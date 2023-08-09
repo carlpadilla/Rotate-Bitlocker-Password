@@ -13,7 +13,7 @@ This PowerShell script is designed to manage BitLocker Recovery Passwords on Win
 ## Parameters
 
 - `MountPoint`: The drive letter for the target drive (default is "C:").
-- `LogSource`: The source name for logging to the Windows Application event log (default is "RCMTech").
+- `LogSource`: The source name for logging to the Windows Application event log.
 
 ## Functionality
 
@@ -24,7 +24,4 @@ This PowerShell script is designed to manage BitLocker Recovery Passwords on Win
 5. **Capture and Log Recovery Passwords**: Logs the old and new recovery passwords to the Application event log (Please note the security considerations mentioned below).
 6. **Error Handling**: Detailed error handling, including logging to both the event log and the console.
 
-## Usage
 
-```powershell
-./BitLockerRecoveryPasswordManagement.ps1 -MountPoint "D:" -LogSource "MyLogSource"
