@@ -1,47 +1,40 @@
-param(
-    [string]$MountPoint = "C:",
-    [string]$LogSource = "recoveryPasswordLog"
-)
+$MountPoint = "C:"
 
-# Logging function to handle both event log and console output
-function Write-Log {
-    param(
-        [string]$Message,
-        [System.Diagnostics.EventLogEntryType]$EntryType = [System.Diagnostics.EventLogEntryType]::Information,
-        [int]$EventId = 0
-    )
-    Write-EventLog -LogName Application -Source $LogSource -EntryType $EntryType -EventId $EventId -Message $Message
-    Write-Host $Message -ForegroundColor $(if ($EntryType -eq [System.Diagnostics.EventLogEntryType]::Error) { "Red" } else { "Green" })
-}
+# Get the BitLocker volume details
+$BitLockerVolume = Get-BitLockerVolume -MountPoint $MountPoint
 
-# Register the event log source
-New-EventLog -LogName Application -Source $LogSource -ErrorAction SilentlyContinue
+# Check if BitLocker is enabled
+if ($BitLockerVolume.ProtectionStatus -eq 'On') {
 
-# Get the key protectors
-$KeyProtectors = (Get-BitLockerVolume -MountPoint $MountPoint).KeyProtector
+    $KeyProtectors = $BitLockerVolume.KeyProtector
 
-foreach ($KeyProtector in $KeyProtectors) {
-    if ($KeyProtector.KeyProtectorType -eq "RecoveryPassword") {
-        # Capture the old recovery password
-        $oldRecoveryPassword = $KeyProtector.RecoveryPassword
+    foreach ($KeyProtector in $KeyProtectors) {
+        if ($KeyProtector.KeyProtectorType -eq "RecoveryPassword") {
+            try {
+                # Suspend BitLocker protection to safely manipulate key protectors
+                Suspend-BitLocker -MountPoint $MountPoint -Confirm:$false
+                
+                # Remove the RecoveryPassword protector
+                Remove-BitLockerKeyProtector -MountPoint $MountPoint -KeyProtectorId $KeyProtector.KeyProtectorId -ErrorAction SilentlyContinue
+                
+                # Add a new RecoveryPassword protector
+                Add-BitLockerKeyProtector -MountPoint $MountPoint -RecoveryPasswordProtector -WarningAction SilentlyContinue
+                
+                # Resume BitLocker protection after key protector operations
+                Resume-BitLocker -MountPoint $MountPoint
 
-        try {
-            # Remove the existing recovery password protector
-            Remove-BitLockerKeyProtector -MountPoint $MountPoint -KeyProtectorId $KeyProtector.KeyProtectorId | Out-Null
-            
-            # Add a new recovery password protector
-            $newKeyProtector = Add-BitLockerKeyProtector -MountPoint $MountPoint -RecoveryPasswordProtector -WarningAction SilentlyContinue
-            $newRecoveryPassword = $newKeyProtector.RecoveryPassword
-
-            # Log success along with the old and new recovery passwords
-            Write-Log "BitLocker Recovery Password for $MountPoint has been changed. Old Recovery Password: $oldRecoveryPassword, New Recovery Password: $newRecoveryPassword" -EventId 1000
-        }
-        catch {
-            # Log error details
-            Write-Log "Failed to change Bitlocker Recovery Password for $MountPoint. Error: $($_.Exception.Message)" -EntryType Warning -EventId 1001
-        }
-        finally {
-            # Additional cleanup or logging can be placed here if needed
+            }
+            catch {
+                # In case of an error, try resuming BitLocker protection if it was suspended
+                if ((Get-BitLockerVolume -MountPoint $MountPoint).ProtectionStatus -eq 'Off') {
+                    Resume-BitLocker -MountPoint $MountPoint
+                }
+                
+            }
         }
     }
+}
+ else {
+    # log or notify that BitLocker isn't enabled on the target volume.
+    Write-Output "BitLocker is not enabled on $MountPoint."
 }
